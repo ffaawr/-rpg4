@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>서브컬처 RPG</title>
+
+<style>
+body { margin:0; background:#111; overflow:hidden; }
+canvas { display:block; margin:auto; background:#222; }
+#hud {
+    position:absolute;
+    top:10px;
+    left:10px;
+    color:white;
+    font-family:sans-serif;
+}
+</style>
+</head>
+
+<body>
+
+<canvas id="game" width="900" height="550"></canvas>
+<div id="hud"></div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const hud = document.getElementById("hud");
+
+let keys = {};
+document.addEventListener("keydown", e => keys[e.key]=true);
+document.addEventListener("keyup", e => keys[e.key]=false);
+
+//// ===== 이미지 =====
+const playerImg = new Image();
+playerImg.src = "player.png";
+
+//// ===== 플레이어 =====
+let player = {
+    x:100, y:100,
+    speed:3,
+    hp:100, maxHp:100,
+    atk:15,
+    level:1,
+    exp:0,
+    dir:1,
+    anim:0
+};
+
+//// ===== 적 =====
+let enemy = {
+    x:500, y:300,
+    hp:80, maxHp:80,
+    speed:1.5,
+    hit:0
+};
+
+//// ===== 카메라 =====
+let cam = {x:0,y:0};
+
+//// ===== 공격 =====
+let attacks = [];
+let damageTexts = [];
+
+function attack(){
+    attacks.push({
+        x:player.x,
+        y:player.y,
+        dir:player.dir,
+        life:10
+    });
+}
+
+//// ===== 경험치 =====
+function gainExp(amount){
+    player.exp += amount;
+    if(player.exp >= player.level * 50){
+        player.exp = 0;
+        player.level++;
+        player.atk += 5;
+        player.maxHp += 20;
+        player.hp = player.maxHp;
+    }
+}
+
+//// ===== 업데이트 =====
+function update(){
+
+    // 이동
+    let moving = false;
+
+    if(keys["w"]) { player.y -= player.speed; moving=true; }
+    if(keys["s"]) { player.y += player.speed; moving=true; }
+    if(keys["a"]) { player.x -= player.speed; player.dir=-1; moving=true; }
+    if(keys["d"]) { player.x += player.speed; player.dir=1; moving=true; }
+
+    player.anim += moving ? 0.2 : 0;
+
+    // 공격
+    if(keys[" "]){
+        attack();
+        keys[" "] = false;
+    }
+
+    // 적 AI
+    let dx = player.x - enemy.x;
+    let dy = player.y - enemy.y;
+    let dist = Math.hypot(dx,dy);
+
+    if(dist > 10){
+        enemy.x += dx/dist * enemy.speed;
+        enemy.y += dy/dist * enemy.speed;
+    }
+
+    // 공격 판정
+    attacks.forEach(a=>{
+        a.x += a.dir * 8;
+        a.life--;
+
+        let hitDist = Math.hypot(a.x - enemy.x, a.y - enemy.y);
+
+        if(hitDist < 30){
+            enemy.hp -= player.atk;
+            enemy.hit = 5;
+
+            damageTexts.push({
+                x:enemy.x,
+                y:enemy.y,
+                text:player.atk,
+                life:30
+            });
+
+            // 넉백
+            enemy.x += a.dir * 10;
+
+            a.life = 0;
+        }
+    });
+
+    attacks = attacks.filter(a=>a.life>0);
+
+    // 데미지 텍스트
+    damageTexts.forEach(t=>{
+        t.y -= 1;
+        t.life--;
+    });
+    damageTexts = damageTexts.filter(t=>t.life>0);
+
+    // 적 사망
+    if(enemy.hp <= 0){
+        gainExp(30);
+        enemy.hp = enemy.maxHp;
+        enemy.x = Math.random()*800;
+        enemy.y = Math.random()*500;
+    }
+
+    if(enemy.hit>0) enemy.hit--;
+
+    // 카메라 부드럽게
+    cam.x += (player.x - 450 - cam.x) * 0.1;
+    cam.y += (player.y - 275 - cam.y) * 0.1;
+}
+
+//// ===== 플레이어 그리기 =====
+function drawPlayer(x,y){
+
+    ctx.save();
+
+    ctx.translate(x,y);
+    ctx.scale(player.dir,1);
+
+    let bounce = Math.sin(player.anim) * 2;
+
+    ctx.drawImage(playerImg, -25, -40 + bounce, 50, 50);
+
+    ctx.restore();
+}
+
+//// ===== 적 =====
+function drawEnemy(x,y){
+
+    ctx.fillStyle = enemy.hit ? "white" : "red";
+    ctx.fillRect(x-15,y-15,30,30);
+
+    // HP바
+    ctx.fillStyle="black";
+    ctx.fillRect(x-20,y-25,40,5);
+    ctx.fillStyle="lime";
+    ctx.fillRect(x-20,y-25,40*(enemy.hp/enemy.maxHp),5);
+}
+
+//// ===== 공격 =====
+function drawAttack(a){
+    ctx.fillStyle="yellow";
+    ctx.fillRect(a.x-5,a.y-5,10,10);
+}
+
+//// ===== 데미지 =====
+function drawDamage(){
+    ctx.fillStyle="yellow";
+    ctx.font="14px sans-serif";
+
+    damageTexts.forEach(t=>{
+        ctx.fillText(t.text, t.x, t.y);
+    });
+}
+
+//// ===== 전체 그리기 =====
+function draw(){
+
+    ctx.clearRect(0,0,900,550);
+
+    ctx.save();
+    ctx.translate(-cam.x, -cam.y);
+
+    drawPlayer(player.x,player.y);
+    drawEnemy(enemy.x,enemy.y);
+
+    attacks.forEach(drawAttack);
+    drawDamage();
+
+    ctx.restore();
+}
+
+//// ===== HUD =====
+function drawHUD(){
+    hud.innerHTML = `
+    ❤️ HP: ${player.hp}/${player.maxHp}<br>
+    ⭐ 레벨: ${player.level}<br>
+    ⚔️ 공격력: ${player.atk}<br>
+    📊 EXP: ${player.exp}/${player.level*50}
+    `;
+}
+
+//// ===== 루프 =====
+function loop(){
+    update();
+    draw();
+    drawHUD();
+    requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+
+</body>
+</html>
